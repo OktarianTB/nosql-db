@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -16,20 +17,56 @@ type dal struct {
 	file     *os.File
 	pageSize int
 
-	freelist *freelist
+	*meta
+	*freelist
 }
 
-func newDal(path string, pageSize int) (*dal, error) {
-
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		return nil, err
+func newDal(path string) (*dal, error) {
+	dal := &dal{
+		meta:     newEmptyMeta(),
+		pageSize: os.Getpagesize(),
 	}
 
-	dal := &dal{
-		file,
-		pageSize,
-		newFreelist(),
+	if _, err := os.Stat(path); err == nil {
+		// file already exists
+		dal.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			_ = dal.close()
+			return nil, err
+		}
+
+		meta, err := dal.readMeta()
+		if err != nil {
+			return nil, err
+		}
+		dal.meta = meta
+
+		freelist, err := dal.readFreelist()
+		if err != nil {
+			return nil, err
+		}
+		dal.freelist = freelist
+	} else if errors.Is(err, os.ErrNotExist) {
+		// file does not exist
+		dal.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			_ = dal.close()
+			return nil, err
+		}
+
+		dal.freelist = newFreelist()
+		dal.freelistPage = dal.getNextPage()
+		_, err := dal.writeFreelist()
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = dal.writeMeta(dal.meta)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, err
 	}
 
 	return dal, nil
@@ -49,7 +86,7 @@ func (dal *dal) close() error {
 
 func (dal *dal) allocateEmptyPage() *page {
 	return &page{
-		data: make([]byte, dal.pageSize),
+		data: make([]byte, dal.pageSize, dal.pageSize),
 	}
 }
 
@@ -57,7 +94,7 @@ func (dal *dal) readPage(pageNum pgnum) (*page, error) {
 	page := dal.allocateEmptyPage()
 
 	// calculate offset
-	offset := int64(page.num) * int64(dal.pageSize)
+	offset := int64(pageNum) * int64(dal.pageSize)
 
 	// read data at offset
 	_, err := dal.file.ReadAt(page.data, offset)
@@ -75,4 +112,53 @@ func (dal *dal) writePage(page *page) error {
 	// write at offset
 	_, err := dal.file.WriteAt(page.data, offset)
 	return err
+}
+
+func (dal *dal) writeFreelist() (*page, error) {
+	page := dal.allocateEmptyPage()
+	page.num = dal.freelistPage
+	dal.freelist.serialize(page.data)
+
+	err := dal.writePage(page)
+	if err != nil {
+		return nil, err
+	}
+
+	dal.freelistPage = page.num
+	return page, nil
+}
+
+func (dal *dal) readFreelist() (*freelist, error) {
+	page, err := dal.readPage(dal.freelistPage)
+	if err != nil {
+		return nil, err
+	}
+
+	freelist := newFreelist()
+	freelist.deserialize(page.data)
+	return freelist, nil
+}
+
+func (dal *dal) writeMeta(meta *meta) (*page, error) {
+	page := dal.allocateEmptyPage()
+	page.num = metaPageNum
+	meta.serialize(page.data)
+
+	err := dal.writePage(page)
+	if err != nil {
+		return nil, err
+	}
+
+	return page, nil
+}
+
+func (dal *dal) readMeta() (*meta, error) {
+	page, err := dal.readPage(metaPageNum)
+	if err != nil {
+		return nil, err
+	}
+
+	meta := newEmptyMeta()
+	meta.deserialize(page.data)
+	return meta, nil
 }

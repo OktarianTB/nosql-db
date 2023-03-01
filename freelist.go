@@ -1,5 +1,9 @@
 package main
 
+import (
+	"encoding/binary"
+)
+
 // freelist manages the free and used pages
 // new page ids are first given from the releasedPageIDs to avoid growing the file
 // if it's empty, then maxPage is incremented and a new page is created thus increasing the file size
@@ -10,13 +14,9 @@ type freelist struct {
 	releasedPages []pgnum
 }
 
-// metaPage is the maximum pgnum that is used by the db for its own purposes
-// page 0 is used as the header page
-const metaPage = 0
-
 func newFreelist() *freelist {
 	return &freelist{
-		maxPage:       metaPage,
+		maxPage:       metaPageNum,
 		releasedPages: []pgnum{},
 	}
 }
@@ -32,6 +32,42 @@ func (freelist *freelist) getNextPage() pgnum {
 	return freelist.maxPage
 }
 
-func (freelist *freelist) releasePagepage(pageId pgnum) {
+func (freelist *freelist) releasePage(pageId pgnum) {
 	freelist.releasedPages = append(freelist.releasedPages, pageId)
+}
+
+func (freelist *freelist) serialize(buffer []byte) []byte {
+	pos := 0
+
+	// serialize maxPage
+	binary.LittleEndian.PutUint16(buffer, uint16(freelist.maxPage))
+	pos += 2
+
+	// serialize releasedPages
+	binary.LittleEndian.PutUint16(buffer[pos:], uint16(len(freelist.releasedPages)))
+	pos += 2
+
+	for _, page := range freelist.releasedPages {
+		binary.LittleEndian.PutUint64(buffer[pos:], uint64(page))
+		pos += pageNumSize
+	}
+
+	return buffer
+}
+
+func (freelist *freelist) deserialize(buffer []byte) {
+	pos := 0
+
+	// deserialize maxPage
+	freelist.maxPage = pgnum(binary.LittleEndian.Uint16(buffer[pos:]))
+	pos += 2
+
+	// deserialiwe releasedPages
+	releasedPagesCount := int(binary.LittleEndian.Uint16(buffer[pos:]))
+	pos += 2
+
+	for i := 0; i < releasedPagesCount; i++ {
+		freelist.releasedPages = append(freelist.releasedPages, pgnum(binary.LittleEndian.Uint64(buffer[pos:])))
+		pos += pageNumSize
+	}
 }
