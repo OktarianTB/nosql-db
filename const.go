@@ -7,4 +7,7 @@ const (
 
 	// size of a page number (in bytes)
 	pageNumSize = 8
+
+	// size of the node header
+	nodeHeaderSize = 3
 )
