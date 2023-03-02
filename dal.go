@@ -90,6 +90,41 @@ func (dal *dal) allocateEmptyPage() *page {
 	}
 }
 
+func (dal *dal) writeNode(node *Node) (*Node, error) {
+	page := dal.allocateEmptyPage()
+	if node.pageNum == 0 {
+		page.num = dal.getNextPage()
+		node.pageNum = page.num
+	} else {
+		page.num = node.pageNum
+	}
+
+	page.data = node.serialize(page.data)
+
+	err := dal.writePage(page)
+	if err != nil {
+		return nil, err
+	}
+
+	return node, nil
+}
+
+func (dal *dal) getNode(pageNum pgnum) (*Node, error) {
+	page, err := dal.readPage(pageNum)
+	if err != nil {
+		return nil, err
+	}
+	node := newEmptyNode()
+	node.deserialize(page.data)
+	node.pageNum = pageNum
+	
+	return node, nil
+}
+
+func (dal *dal) deleteNode(pageNum pgnum) {
+	dal.releasePage(pageNum)
+}
+
 func (dal *dal) readPage(pageNum pgnum) (*page, error) {
 	page := dal.allocateEmptyPage()
 

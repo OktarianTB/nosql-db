@@ -1,33 +1,18 @@
 package main
 
+import "fmt"
+
 func main() {
 	// initialize db
-	dal, _ := newDal("db.db")
+	dal, _ := newDal("mainTest")
 
-	// create new page
-	page := dal.allocateEmptyPage()
-	page.num = dal.getNextPage()
-	copy(page.data[:], "data")
+	node, _ := dal.getNode(dal.root)
+	node.dal = dal
+	index, containingNode, _ := node.findKey([]byte("Key1"))
+	res := containingNode.items[index]
 
-	// commit it
-	_ = dal.writePage(page)
-	_, _ = dal.writeFreelist()
-
-	// close the db
+	fmt.Printf("key is: %s, value is: %s", res.key, res.value)
+	
+	// Close the db
 	_ = dal.close()
-
-	// open db again
-	// we expect the freelist state to have been saved
-	dal, _ = newDal("db.db")
-	page = dal.allocateEmptyPage()
-	page.num = dal.getNextPage()
-	copy(page.data[:], "data2")
-	_ = dal.writePage(page)
-
-	// Create a page and free it so the released pages will be updated
-	pageNum := dal.getNextPage()
-	dal.releasePage(pageNum)
-
-	// commit it
-	_, _ = dal.writeFreelist()
 }
