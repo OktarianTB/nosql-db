@@ -1,9 +1,14 @@
 package main
 
+import "errors"
+
 const (
-	// size of the node header
+	magicNumberSize = 4
+	counterSize = 4
 	nodeHeaderSize = 3
 
-	// size of a page number (in bytes)
-	pageNumSize = 8
+	collectionSize = 16
+	pageNumSize    = 8
 )
+
+var writeInsideReadTxErr = errors.New("can't perform a write operation inside a read transaction")
